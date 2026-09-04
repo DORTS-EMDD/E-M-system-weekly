@@ -5937,6 +5937,7 @@ def strip_internal_report_fields(text: str) -> str:
     )
     search_count_pattern = re.compile(r"^\s*(?:🔍\s*)?(?:\*\*)?執行搜尋次數")
     achieved_shortfall_pattern = re.compile(r"^\s*(?:⚠️\s*)?(?:\*\*)?不足\s*\d+\s*則原因(?:\*\*)?\s*[：:]\s*(?:已達標|無|無。)\s*$")
+    html_comment_pattern = re.compile(r"^\s*<!--.*?-->\s*$")
 
     for raw_line in lines:
         line = raw_line.strip()
@@ -5959,6 +5960,8 @@ def strip_internal_report_fields(text: str) -> str:
         if search_count_pattern.match(line):
             continue
         if achieved_shortfall_pattern.match(line):
+            continue
+        if html_comment_pattern.match(line):
             continue
         if section_title in {"結尾", "結尾（必填）"}:
             continue

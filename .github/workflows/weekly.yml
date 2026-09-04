@@ -1,0 +1,73 @@
+name: 每週捷運技術週報自動寄送
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      news_lookback_days:
+        description: '新聞搜尋天數'
+        required: false
+        default: '7'
+        type: choice
+        options:
+          - '7'
+          - '14'
+          - '21'
+          - '30'
+
+jobs:
+  generate-and-send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: 📥 取得程式碼
+        uses: actions/checkout@v4
+
+      - name: 🐍 設定 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 安裝套件
+        run: pip install -r requirements.txt
+
+      - name: 🤖 產生報告並寄信（含自動重試）
+        env:
+          MAIAGENT_API_KEY: ${{ secrets.MAIAGENT_API_KEY }}
+          MAIAGENT_CHATBOT_ID: ${{ secrets.MAIAGENT_CHATBOT_ID }}
+          MAIAGENT_API_BASE: ${{ secrets.MAIAGENT_API_BASE || 'https://api.maiagent.ai' }}
+          GMAIL_USER:     ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}
+          RECIPIENTS:     ${{ secrets.RECIPIENTS }}
+          NEWS_LOOKBACK_DAYS: ${{ github.event.inputs.news_lookback_days || '7' }}
+          MAIAGENT_TIMEOUT_SECONDS: 300
+          DDGS_MAX_QUERIES: 20
+          MAIAGENT_MAX_DDG_CHARS: 15000
+          MAIAGENT_MAX_RSS_CHARS: 15000
+        run: |
+          # 遇到雲端 API 暫時性失敗時自動重試，最多 3 次，間隔加倍
+          MAX_RETRY=3
+          WAIT=60
+          for i in $(seq 1 $MAX_RETRY); do
+            echo "▶ 第 $i 次嘗試..."
+            python -u main.py && break
+            EXIT=$?
+            if [ $i -lt $MAX_RETRY ]; then
+              echo "⚠️ 失敗（exit $EXIT），等待 ${WAIT}s 後重試..."
+              sleep $WAIT
+              WAIT=$((WAIT * 2))
+            else
+              echo "❌ 重試 $MAX_RETRY 次後仍失敗"
+              exit $EXIT
+            fi
+          done
+
+      - name: 💾 上傳報告為 Artifact（保留 90 天）
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-report-${{ github.run_id }}
+          path: reports/
+          retention-days: 90
